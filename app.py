@@ -56,7 +56,7 @@ def call_hackai_generate(prompt, num_problems, max_attempts=3, backoff=1.0):
     for attempt in range(1, max_attempts + 1):
         try:
             payload = {
-                "model": "openai/gpt-5.1",  # can change anytime
+                "model": "deepseek/deepseek-r1-distill-qwen-32b",  # can change anytime
                 "messages": [
                     {"role": "user", "content": prompt}
                 ],
@@ -229,6 +229,7 @@ CONTEST STYLE RULES (MANDATORY):
 
 If the contest is AIME:
 - Answer must be a positive integer from 0 to 999.
+- No calculator use in this contest, so dont have heavy computation and approximation in these problems.
 - Problems must rely on typical AIME structures: modular arithmetic, functional equations, tricky geometry ratios, combinatorics with structure, or clever integer reasoning.
 - Avoid brute force search problems or problems requiring checking large ranges.
 - Avoid problems where the answer is obviously > 999.
@@ -238,6 +239,7 @@ If the contest is AIME:
 If the contest is Euclid/CSIMC:
 - Problems must be multi-step.
 - Statement can be longer.
+- As calculator is allowed in these contests, the solution can involve more heavy computation or approximation than AIME.
 - May include proofs or partial reasoning.
 - Should involve algebraic manipulation or geometry reasoning, etc., typical of Euclid.
 - If it is an Advanced problem under this category: 
@@ -245,6 +247,7 @@ If the contest is Euclid/CSIMC:
   - Often requires lemma-style insight.
   - Significantly more olympiad-level theory based.
   - Should have a highly inductive difficult transformation or trick.
+  - Typically these problems are proof questions rather than expecting singular answers.
 
 If the contest is AMC:
 - Simple, elegant, one-step conceptual.
@@ -252,7 +255,7 @@ If the contest is AMC:
 - Light computation.
 
 Each contest has its OWN flavor.
-As an elite, original, and creative problem-setting, match the targeted contest exactly and specific in tone, answer, problem style.
+As an elite, original, and creative problem-settor, YOU MUST match the targeted contest exactly and specific in tone, answer, problem style.
 Study the given sample texts to notice possible strong patterns, and use intenret knowledge if necessary as well.
 
 
