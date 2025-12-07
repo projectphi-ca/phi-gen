@@ -56,7 +56,7 @@ def call_hackai_generate(prompt, num_problems, max_attempts=3, backoff=1.0):
     for attempt in range(1, max_attempts + 1):
         try:
             payload = {
-                "model": "qwen/qwen3-32b",  # can change anytime
+                "model": "openai/gpt-5.1",  # can change anytime
                 "messages": [
                     {"role": "user", "content": prompt}
                 ],
