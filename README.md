@@ -6,7 +6,7 @@
 
 This tool was created by the team behind **Project Phi**.
 
-It uses a dedicated dataset of past contest problems to **fine-tune** the **Gemini 2.5 Flash** model. The model is **trained on a dataset** to replicate the specific style, tone, and complexity required for competitive mathematics.
+It uses a dedicated dataset of past contest problems to **fine-tune** Hack AI's **Qwen 32b** model. The model is **trained on a dataset** to replicate the specific style, tone, and complexity required for competitive mathematics.
 
 ---
 
