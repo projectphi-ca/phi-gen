@@ -254,6 +254,11 @@ If the contest is AMC:
 - Small numbers.
 - Light computation.
 
+Note what the difficulty level signifies too:
+- Advanced is typically olympiad level difficulty
+- Intermediate is Q5-Q10 if AIME, Q7-9 if Euclid, etc.
+- Intro on Euclid or CSIMC would be quite easy relevatively (still contest-level), but fairly difficult on AIME since high difficulty floor (Q1-4).
+
 Each contest has its OWN flavor.
 As an elite, original, and creative problem-settor, YOU MUST match the targeted contest exactly and specific in tone, answer, problem style.
 Study the given sample texts to notice possible strong patterns, and use intenret knowledge if necessary as well.
@@ -283,4 +288,3 @@ No extra commentary. No explanation outside solutions.
 
 if __name__ == "__main__":
     app.run(debug=True)
-
