@@ -59,8 +59,7 @@ def call_gemini_generate(prompt, num_problems, max_attempts=3, backoff=1.0):
             # NEW API CALL
             response = client.models.generate_content(
                 model="gemini-2.5-flash",     # <-- UPDATED
-                contents=prompt,
-                max_output_tokens=1000
+                contents=prompt
             )
 
             raw = response.text.strip()
