@@ -225,6 +225,37 @@ REQUIREMENTS:
 - Keep LaTeX notation simple (like x^2, \sqrt{''}, \frac{''}{''}).
 - No markdown formatting except the "###" separators.
 
+CONTEST STYLE RULES (MANDATORY):
+
+If the contest is AIME:
+- Answer must be a positive integer from 0 to 999.
+- Problems must rely on typical AIME structures: modular arithmetic, functional equations, tricky geometry ratios, combinatorics with structure, or clever integer reasoning.
+- Avoid brute force search problems or problems requiring checking large ranges.
+- Avoid problems where the answer is obviously > 999.
+- Difficulty should resemble AIME problems #9–#15 if level = "advanced", or #1–#8 if level = "intermediate".
+- Use classical AIME phrasing and conciseness.
+
+If the contest is Euclid/CSIMC:
+- Problems must be multi-step.
+- Statement can be longer.
+- May include proofs or partial reasoning.
+- Should involve algebraic manipulation or geometry reasoning, etc., typical of Euclid.
+- If it is an Advanced problem under this category: 
+  - Very deep problem structure.
+  - Often requires lemma-style insight.
+  - Significantly more olympiad-level theory based.
+  - Should have a highly inductive difficult transformation or trick.
+
+If the contest is AMC:
+- Simple, elegant, one-step conceptual.
+- Small numbers.
+- Light computation.
+
+Each contest has its OWN flavor.
+As an elite, original, and creative problem-setting, match the targeted contest exactly and specific in tone, answer, problem style.
+Study the given sample texts to notice possible strong patterns, and use intenret knowledge if necessary as well.
+
+
 STRICT OUTPUT FORMAT (NO EXTRA TEXT):
 
 ### Problem 1
