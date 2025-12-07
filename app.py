@@ -1,20 +1,24 @@
 import os
 import pandas as pd
 from flask import Flask, render_template, request, jsonify
-from google.genai import Client
+from google.genai import Client          # <-- UPDATED
 from dotenv import load_dotenv
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+import json
 import re
 import time
 
 load_dotenv()
 
+# ---------------------------------------------------------
+#  CONFIGURE GEMINI
+# ---------------------------------------------------------
 api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
-    raise RuntimeError("No GEMINI_API_KEY in environment.")
+    raise RuntimeError("❌ No API key found. Put GEMINI_API_KEY in .env")
 
-client = Client(api_key=api_key)
+client = Client(api_key=api_key)          # <-- UPDATED
 
 app = Flask(__name__)
 
@@ -24,6 +28,9 @@ limiter = Limiter(
     default_limits=["20 per minute"]
 )
 
+# ---------------------------------------------------------
+#  LOAD DATASET
+# ---------------------------------------------------------
 df = pd.read_csv("data/problems.csv")
 
 difficulty_map = {
@@ -35,17 +42,24 @@ difficulty_map = {
 }
 df["level"] = df["level"].map(difficulty_map).fillna(df["level"])
 
+# =========================================================
+#  GEMINI TEXT BLOCK PARSING + GENERATION
+# =========================================================
 
 def call_gemini_generate(prompt, num_problems, max_attempts=3, backoff=1.0):
+    """
+    Ask Gemini and parse the custom text block format.
+    Updated to use google-genai 1.53 client API.
+    """
     last_raw = ""
 
     for attempt in range(1, max_attempts + 1):
+        raw = ""
         try:
-            # IMPORTANT: use contents= (google-genai 1.x)
+            # NEW API CALL
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-                stream=False
+                model="gemini-2.5-flash",     # <-- UPDATED
+                contents=prompt
             )
 
             raw = response.text.strip()
@@ -56,49 +70,78 @@ def call_gemini_generate(prompt, num_problems, max_attempts=3, backoff=1.0):
                 return problems
 
         except Exception as e:
-            print(f"[WARNING] Gemini API failed attempt {attempt}: {e}")
-            time.sleep(backoff * attempt)
+            print(f"[WARNING] Gemini API Call Failed (Attempt {attempt}). Error: {e}")
+            if not last_raw:
+                last_raw = ""
 
-    return [{
-        "title": "API Error",
-        "statement": "Gemini returned an error or insufficient output.",
-        "solution": "Try again later."
-    }]
+        time.sleep(backoff * attempt)
+
+    if not last_raw:
+        print("[WARNING] No output generated from Gemini. Returning empty list.")
+        return [{
+            "title": "API Error",
+            "statement": "Could not generate problems. The server received an API error, possibly due to quota limits. Please try again in a few minutes.",
+            "solution": "The model failed to return content. Check the console for details on the quota limit error (429)."
+        }]
+
+    return _block_parse(last_raw, num_problems)
+
 
 
 def _block_parse(txt, num):
+    """Parse ### Problem blocks (fail-safe)."""
     if not isinstance(txt, str) or not txt.strip():
         return []
 
+    # FIX invalid escape by using raw string
     blocks = re.split(r"###\s*Problem\s*\d+", txt, flags=re.IGNORECASE)
+
     problems = []
 
     for block in blocks:
-        block = block.strip()
-        if not block:
+        b = block.strip()
+        if not b:
             continue
 
-        # Extract statement & solution
-        parts = re.split(r"(Statement|Solution)\s*:\s*", block, flags=re.IGNORECASE)
+        parts = re.split(r"(Statement|Solution)\s*:\s*", b, flags=re.DOTALL | re.IGNORECASE)
 
         statement = ""
         solution = ""
 
         for i in range(1, len(parts), 2):
-            key = parts[i].lower()
-            value = parts[i + 1].strip()
+            key = parts[i].lower().strip()
+            value = parts[i+1].strip()
 
             if key == "statement":
-                m = re.search(r"Solution\s*:\s*", value, flags=re.IGNORECASE)
-                statement = value[:m.start()].strip() if m else value
+                next_key_match = re.search(r"(Solution)\s*:\s*", value, flags=re.DOTALL | re.IGNORECASE)
+                statement = value[:next_key_match.start()].strip() if next_key_match else value.strip()
 
             elif key == "solution":
                 solution = value.strip()
 
         if not statement:
-            statement = block
+            stmt_match = re.search(
+                r"(.*?)(?=Solution\s*:|$)",
+                b, flags=re.DOTALL | re.IGNORECASE
+            )
+            statement = stmt_match.group(1).strip() if stmt_match else b
 
-        statement = re.sub(r"^Problem\s*\d+", "", statement).strip()
+        if not solution:
+            solution_match = re.search(
+                r"Solution\s*:\s*(.*)$",
+                b, flags=re.DOTALL | re.IGNORECASE
+            )
+            solution = solution_match.group(1).strip() if solution_match else ""
+
+        statement = re.sub(r"###$", "", statement).strip()
+        solution = re.sub(r"###$", "", solution).strip()
+
+        statement = "\n".join(
+            ln for ln in statement.splitlines()
+            if not ln.lower().startswith("answer:")
+        ).strip()
+
+        statement = re.sub(r"^Problem\s*\d+\s*", "", statement).strip()
 
         problems.append({
             "title": "",
@@ -111,6 +154,10 @@ def _block_parse(txt, num):
 
     return problems
 
+
+# =========================================================
+#  ROUTES
+# =========================================================
 
 @app.route("/")
 def index():
@@ -136,7 +183,7 @@ def generate():
         filtered = filtered[filtered["subtopic"] == subtopic]
 
     if filtered.empty:
-        sample_texts = "No example problems available."
+        sample_texts = "No specific examples available for this filter combination."
     else:
         sample_texts = "\n\n".join(
             filtered["problem_text"].sample(min(5, len(filtered))).tolist()
@@ -148,28 +195,41 @@ You are an elite math contest problem-setter.
 Generate EXACTLY {num_problems} NEW and ORIGINAL math contest problems with:
 
 Contest style: {contest}
-Topic: {topic or "any"}
-Subtopic: {subtopic or "any"}
+Topic: {topic if topic else "any"}
+Subtopic: {subtopic if subtopic else "any"}
 Difficulty level: {difficulty}
 
-Learn style ONLY from these real problems:
+Learn the writing style ONLY from these real problems:
 {sample_texts}
 
 REQUIREMENTS:
-- Start DIRECTLY with "### Problem 1"
-- No intro text.
-- Short official contest wording.
-- Solution contains answer.
-- Statement must NOT include answer.
-- Use $...$ or $$...$$ for LaTeX.
-- STRICT FORMAT:
+- DO NOT copy or modify any dataset problems.
+- DO NOT include ANY introductory text.
+- DO NOT say "Here are your problems", "Sure", "Okay", or anything else before Problem 1.
+- Start DIRECTLY with "### Problem 1".
+- Use SHORT, official contest-style wording (AMC/AIME/CMO style).
+- The statement MUST NOT contain the answer.
+- The answer must appear ONLY inside the solution.
+- Use LaTeX notation for all math expressions, wrapped in inline ($...$) or display ($$...$$) delimiters (e.g., $x^2 + 1$, not just x^2 + 1).
+- Keep LaTeX notation simple (like x^2, \sqrt{''}, \frac{''}{''}).
+- No markdown formatting except the "###" separators.
+
+STRICT OUTPUT FORMAT (NO EXTRA TEXT):
 
 ### Problem 1
 Statement: ...
 Solution: ...
 ###
 
-(then Problem 2 ... etc)
+### Problem 2
+Statement: ...
+Solution: ...
+###
+
+(Continue until Problem {num_problems})
+
+Produce EXACTLY {num_problems} problems in this format.
+No extra commentary. No explanation outside solutions.
 """
 
     generated = call_gemini_generate(prompt, num_problems)
