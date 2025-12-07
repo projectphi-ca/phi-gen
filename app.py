@@ -1,24 +1,24 @@
 import os
 import pandas as pd
 from flask import Flask, render_template, request, jsonify
-from google.genai import Client          # <-- UPDATED
 from dotenv import load_dotenv
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import json
 import re
 import time
+import requests
 
 load_dotenv()
 
 # ---------------------------------------------------------
-#  CONFIGURE GEMINI
+#  CONFIGURE HACKAI / OPENROUTER PROXY
 # ---------------------------------------------------------
-api_key = os.getenv("GEMINI_API_KEY")
-if not api_key:
-    raise RuntimeError("❌ No API key found. Put GEMINI_API_KEY in .env")
+HACKAI_KEY = os.getenv("HACKAI_API_KEY")
+if not HACKAI_KEY:
+    raise RuntimeError("❌ No HACKAI_API_KEY found in .env")
 
-client = Client(api_key=api_key)          # <-- UPDATED
+HACKAI_URL = "https://ai.hackclub.com/proxy/v1/chat/completions"
 
 app = Flask(__name__)
 
@@ -42,27 +42,42 @@ difficulty_map = {
 }
 df["level"] = df["level"].map(difficulty_map).fillna(df["level"])
 
+
 # =========================================================
-#  GEMINI TEXT BLOCK PARSING + GENERATION
+#  GENERATION USING HACKAI (OpenRouter format)
 # =========================================================
 
-def call_gemini_generate(prompt, num_problems, max_attempts=3, backoff=1.0):
+def call_hackai_generate(prompt, num_problems, max_attempts=3, backoff=1.0):
     """
-    Ask Gemini and parse the custom text block format.
-    Updated to use google-genai 1.53 client API.
+    Uses HackAI proxy (OpenRouter-compatible) to generate text.
     """
     last_raw = ""
 
     for attempt in range(1, max_attempts + 1):
-        raw = ""
         try:
-            # NEW API CALL
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",     # <-- UPDATED
-                contents=prompt
-            )
+            payload = {
+                "model": "qwen/qwen3-32b",  # can change anytime
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ],
+                "stream": False
+            }
 
-            raw = response.text.strip()
+            headers = {
+                "Authorization": f"Bearer {HACKAI_KEY}",
+                "Content-Type": "application/json"
+            }
+
+            r = requests.post(HACKAI_URL, headers=headers, json=payload, timeout=60)
+
+            if r.status_code != 200:
+                print(f"[ERROR] HackAI returned HTTP {r.status_code}")
+                print(r.text)
+                time.sleep(backoff * attempt)
+                continue
+
+            data = r.json()
+            raw = data["choices"][0]["message"]["content"]
             last_raw = raw
 
             problems = _block_parse(raw, num_problems)
@@ -70,32 +85,30 @@ def call_gemini_generate(prompt, num_problems, max_attempts=3, backoff=1.0):
                 return problems
 
         except Exception as e:
-            print(f"[WARNING] Gemini API Call Failed (Attempt {attempt}). Error: {e}")
-            if not last_raw:
-                last_raw = ""
+            print(f"[WARNING] HackAI failed (Try {attempt}): {e}")
 
         time.sleep(backoff * attempt)
 
+    # Fallback
     if not last_raw:
-        print("[WARNING] No output generated from Gemini. Returning empty list.")
         return [{
             "title": "API Error",
-            "statement": "Could not generate problems. The server received an API error, possibly due to quota limits. Please try again in a few minutes.",
-            "solution": "The model failed to return content. Check the console for details on the quota limit error (429)."
+            "statement": "No response from HackAI (likely overload). Try again later.",
+            "solution": "The model returned no output."
         }]
 
     return _block_parse(last_raw, num_problems)
 
 
+# =========================================================
+#  PARSER
+# =========================================================
 
 def _block_parse(txt, num):
-    """Parse ### Problem blocks (fail-safe)."""
     if not isinstance(txt, str) or not txt.strip():
         return []
 
-    # FIX invalid escape by using raw string
     blocks = re.split(r"###\s*Problem\s*\d+", txt, flags=re.IGNORECASE)
-
     problems = []
 
     for block in blocks:
@@ -135,12 +148,10 @@ def _block_parse(txt, num):
 
         statement = re.sub(r"###$", "", statement).strip()
         solution = re.sub(r"###$", "", solution).strip()
-
         statement = "\n".join(
             ln for ln in statement.splitlines()
             if not ln.lower().startswith("answer:")
         ).strip()
-
         statement = re.sub(r"^Problem\s*\d+\s*", "", statement).strip()
 
         problems.append({
@@ -188,7 +199,7 @@ def generate():
         sample_texts = "\n\n".join(
             filtered["problem_text"].sample(min(5, len(filtered))).tolist()
         )
-
+    
     prompt = f"""
 You are an elite math contest problem-setter.
 
@@ -232,9 +243,10 @@ Produce EXACTLY {num_problems} problems in this format.
 No extra commentary. No explanation outside solutions.
 """
 
-    generated = call_gemini_generate(prompt, num_problems)
+    generated = call_hackai_generate(prompt, num_problems)
     return jsonify(generated)
 
 
 if __name__ == "__main__":
     app.run(debug=True)
+
