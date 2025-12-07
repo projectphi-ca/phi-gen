@@ -1,0 +1,226 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Phi-Gen: Contest Problem Generator</title>
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles/style.css') }}">
+  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='images/logo.png') }}">
+  
+  <style>
+    /* Makes buttons inline with spacing */
+    .problem-controls {
+      display: flex;
+      gap: 15px; /* Spacing between buttons */
+      margin-top: 10px; 
+    }
+    /* Hover effect */
+    .problem-controls .btn:hover {
+      opacity: 0.9;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+      cursor: pointer;
+    }
+  </style>
+  
+  <!-- MathJax -->
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$','$$'], ['\\[','\\]']],
+        packages: {'[+]': ['base', 'ams', 'noerrors', 'noundefined']}
+      },
+      loader: { load: ['[tex]/ams', '[tex]/noerrors', '[tex]/noundefined'] },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+
+<body>
+  <header class="hero">
+    <h1>Phi-Gen</h1>
+    <p class="subtitle">Project Phi's AI-powered contest problem generation</p>
+  </header>
+
+  <main class="container">
+    <form id="genForm" class="generate-form card">
+      <div class="form-grid">
+        <div class="field">
+          <label>Contest</label>
+          <select id="contest" name="contest" required>
+            {% for c in contests %}
+              <option value="{{ c }}">{{ c }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Topic</label>
+          <select id="topic" name="topic">
+            <option value="">Any</option>
+            {% for t in topics %}
+              <option value="{{ t }}">{{ t.replace('_', ' ') | title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Subtopic</label>
+          <input id="subtopic" name="subtopic" placeholder="optional" />
+        </div>
+
+        <div class="field">
+          <label>Difficulty</label>
+          <select name="difficulty" id="difficulty" required>
+            {% for lv in levels %}
+              <option value="{{ lv }}">{{ lv|capitalize }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="field">
+          <label># Problems</label>
+          <select name="num_problems" id="num_problems" required>
+            <option value="1">1</option>
+            <option value="3">3</option>
+            <option value="5" selected>5</option>
+            <option value="10">10</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn gradient" type="submit">Generate</button>
+        <button id="clearResults" class="btn flat" type="button">Clear</button>
+      </div>
+    </form>
+
+    <section id="resultArea" class="result-area" style="display:none;">
+      <div id="meta" class="meta small"></div>
+      <div id="problems" class="problems-list"></div>
+    </section>
+
+    <div class="ai-warning">
+      AI can make mistakes. Always double-check important results.
+    </div>
+  </main>
+
+  <script>
+    const form = document.getElementById("genForm");
+    const resultArea = document.getElementById("resultArea");
+    const problemsContainer = document.getElementById("problems");
+    const metaDiv = document.getElementById("meta");
+    const clearBtn = document.getElementById("clearResults");
+
+    // Escape HTML to prevent injection
+    function escapeHTML(str) {
+      return (str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    // SVG Copy Icon
+    const COPY_ICON = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round"
+           stroke-linejoin="round" style="vertical-align: -2px;">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+        <path d="M5 15H4a2 2 0 0 1-2-2V4
+                 a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+      </svg>
+    `;
+
+    function createProblemCard(p, idx) {
+      const card = document.createElement("article");
+      card.className = "problem-card card";
+
+      const rawCopy = `Problem ${idx + 1}\n\n${p.statement}\n`;
+
+      card.innerHTML = `
+        <div class="problem-header">
+          <div class="index">#${idx + 1}</div>
+          <div class="title">Problem ${idx + 1}</div>
+        </div>
+
+        <div class="problem-statement">
+          ${escapeHTML(p.statement)}
+        </div>
+
+        <div class="problem-controls">
+          <button class="btn outline small solution-btn">Show Solution</button>
+          <button class="btn outline small copy-btn">
+            ${COPY_ICON} Copy
+          </button>
+        </div>
+
+        <div class="problem-solution hidden">
+          ${escapeHTML(p.solution)}
+        </div>
+      `;
+
+      const solBtn = card.querySelector(".solution-btn");
+      const solutionDiv = card.querySelector(".problem-solution");
+      const copyBtn = card.querySelector(".copy-btn");
+
+      solBtn.addEventListener("click", () => {
+        const hidden = solutionDiv.classList.toggle("hidden");
+        solBtn.textContent = hidden ? "Show Solution" : "Hide Solution";
+
+        if (!hidden && window.MathJax) {
+          MathJax.typesetPromise([solutionDiv]);
+        }
+      });
+
+      copyBtn.addEventListener("click", async () => {
+        await navigator.clipboard.writeText(rawCopy);
+        copyBtn.textContent = "✓ Copied";
+        setTimeout(() => {
+          copyBtn.innerHTML = `${COPY_ICON} Copy`;
+        }, 1200);
+      });
+
+      return card;
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      problemsContainer.innerHTML = "";
+      resultArea.style.display = "block";
+      metaDiv.textContent = "Generating (2-3 min)…";
+
+      const formData = new FormData(form);
+
+      const resp = await fetch("/generate", {
+        method: "POST",
+        body: formData
+      });
+
+      if (!resp.ok) {
+        metaDiv.textContent = `Error: ${resp.status}`;
+        return;
+      }
+
+      const data = await resp.json();
+      metaDiv.textContent = `Generated ${data.length} problems`;
+
+      data.forEach((p, idx) => {
+        const card = createProblemCard(p, idx);
+        problemsContainer.appendChild(card);
+
+        // Typeset math for statements
+        if (window.MathJax) MathJax.typesetPromise([card]);
+      });
+    });
+
+    clearBtn.addEventListener("click", () => {
+      problemsContainer.innerHTML = "";
+      resultArea.style.display = "none";
+      metaDiv.textContent = "";
+    });
+  </script>
+
+</body>
+</html>
