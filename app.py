@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 from flask import Flask, render_template, request, jsonify
-from google.generativeai import GenerativeModel, configure
+import google.genai as genai   # <-- updated import
 from dotenv import load_dotenv
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -18,8 +18,8 @@ api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
     raise RuntimeError("❌ No API key found. Put GEMINI_API_KEY in .env")
 
-configure(api_key=api_key)
-gemini = GenerativeModel("gemini-2.5-flash") 
+genai.configure(api_key=api_key)
+gemini = genai.GenerativeModel(model="gemini-2.5-flash")
 
 app = Flask(__name__)
 
@@ -43,7 +43,6 @@ difficulty_map = {
 }
 df["level"] = df["level"].map(difficulty_map).fillna(df["level"])
 
-
 # =========================================================
 #  GEMINI TEXT BLOCK PARSING
 # =========================================================
@@ -58,9 +57,9 @@ def call_gemini_generate(prompt, num_problems, max_attempts=3, backoff=1.0):
     for attempt in range(1, max_attempts + 1):
         raw = ""
         try:
-            response = gemini.generate_content(
-                prompt,
-                generation_config={"temperature": 0.8}
+            response = gemini.generate_text(
+                prompt=prompt,
+                max_output_tokens=1000
             )
             raw = response.text.strip()
             last_raw = raw
@@ -69,11 +68,6 @@ def call_gemini_generate(prompt, num_problems, max_attempts=3, backoff=1.0):
             if len(problems) >= num_problems:
                 return problems
         
-        # Explicitly catch quota errors and stop retrying
-        except ResourceExhaustedError as e:
-            print(f"[FATAL ERROR] Gemini API Quota Exceeded. Aborting retries: {e}")
-            break 
-        
         except Exception as e:
             print(f"[WARNING] Gemini API Call Failed (Attempt {attempt}). Error: {e}")
             if not last_raw:
@@ -81,10 +75,8 @@ def call_gemini_generate(prompt, num_problems, max_attempts=3, backoff=1.0):
 
         time.sleep(backoff * attempt)
 
-    # Final fallback: Try to parse the last raw text (which might be empty or an error message)
     if not last_raw:
         print("[WARNING] No output generated from Gemini. Returning empty list.")
-        # Return a list containing a single friendly error message for the user
         return [{
             "title": "API Error",
             "statement": "Could not generate problems. The server received an API error, possibly due to quota limits. Please try again in a few minutes.",
@@ -92,6 +84,7 @@ def call_gemini_generate(prompt, num_problems, max_attempts=3, backoff=1.0):
         }]
         
     return _block_parse(last_raw, num_problems)
+
 
 
 def _block_parse(txt, num):
